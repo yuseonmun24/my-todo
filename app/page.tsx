@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  addCategory,
-  createTodo,
-  DEFAULT_CATEGORIES,
-  getCategories,
-  getTodos,
-  saveCategories,
-  saveTodos,
-  type Todo,
-} from "@/lib/todo-storage";
+
+export type Todo = {
+  id: string;
+  text: string;
+  category: string;
+  completed: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const DEFAULT_CATEGORIES = ["일반", "업무", "개인", "쇼핑", "건강"];
 
 const SORT_OPTIONS = {
   createdAtDesc: "최신순",
@@ -29,6 +30,55 @@ const formatDate = (date: Date) =>
     weekday: "long",
   }).format(date);
 
+async function fetchTodosAndCategories() {
+  const response = await fetch("/api/todos");
+  if (!response.ok) {
+    throw new Error("Failed to load todos");
+  }
+
+  const data = (await response.json()) as {
+    todos: Todo[];
+    categories: string[];
+  };
+
+  return data;
+}
+
+async function persistTodosAndCategories(nextTodos: Todo[], nextCategories: string[]) {
+  const response = await fetch("/api/todos", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      todos: nextTodos,
+      categories: nextCategories,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to save todos");
+  }
+
+  return (await response.json()) as {
+    todos: Todo[];
+    categories: string[];
+  };
+}
+
+function createTodo(text: string, category: string): Todo {
+  const now = new Date().toISOString();
+
+  return {
+    id: crypto.randomUUID(),
+    text,
+    category,
+    completed: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export default function Home() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [draft, setDraft] = useState("");
@@ -42,22 +92,25 @@ export default function Home() {
   const [todayLabel, setTodayLabel] = useState("오늘");
 
   useEffect(() => {
-    const savedTodos = getTodos();
-    const savedCategories = getCategories();
-    setTodos(savedTodos);
-    setCategories(savedCategories);
-    setCategory(savedCategories[0] ?? DEFAULT_CATEGORIES[0]);
-    setEditCategory(savedCategories[0] ?? DEFAULT_CATEGORIES[0]);
-    setTodayLabel(formatDate(new Date()));
+    const loadData = async () => {
+      try {
+        const data = await fetchTodosAndCategories();
+        setTodos(data.todos);
+        setCategories(data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES);
+        setCategory(data.categories[0] ?? DEFAULT_CATEGORIES[0]);
+        setEditCategory(data.categories[0] ?? DEFAULT_CATEGORIES[0]);
+      } catch {
+        setTodos([]);
+        setCategories(DEFAULT_CATEGORIES);
+        setCategory(DEFAULT_CATEGORIES[0]);
+        setEditCategory(DEFAULT_CATEGORIES[0]);
+      }
+
+      setTodayLabel(formatDate(new Date()));
+    };
+
+    void loadData();
   }, []);
-
-  useEffect(() => {
-    saveTodos(todos);
-  }, [todos]);
-
-  useEffect(() => {
-    saveCategories(categories);
-  }, [categories]);
 
   const remainingTodos = useMemo(
     () => todos.filter((todo) => !todo.completed).length,
@@ -91,47 +144,76 @@ export default function Home() {
     }
   }, [sortKey, todos]);
 
-  const addTodo = () => {
+  const addTodo = async () => {
     const trimmed = draft.trim();
     if (!trimmed) {
       return;
     }
 
-    setTodos((current) => [createTodo(trimmed, category), ...current]);
+    const nextTodos = [createTodo(trimmed, category), ...todos];
+    setTodos(nextTodos);
     setDraft("");
+
+    try {
+      await persistTodosAndCategories(nextTodos, categories);
+    } catch {
+      // Ignore persistence errors and keep the UI responsive.
+    }
   };
 
-  const addCustomCategory = () => {
-    const nextCategory = addCategory(customCategory);
-    if (!nextCategory) {
+  const addCustomCategory = async () => {
+    const trimmed = customCategory.trim();
+    if (!trimmed) {
       return;
     }
 
-    setCategories((current) => Array.from(new Set([...current, nextCategory])));
-    setCategory(nextCategory);
-    setEditCategory(nextCategory);
-    setCustomCategory("");
-  };
-
-  const toggleTodo = (id: string) => {
-    setTodos((current) =>
-      current.map((todo) =>
-        todo.id === id
-          ? {
-              ...todo,
-              completed: !todo.completed,
-              updatedAt: new Date().toISOString(),
-            }
-          : todo,
-      ),
+    const nextCategories = Array.from(
+      new Set([...categories, trimmed]),
     );
+    setCategories(nextCategories);
+    setCategory(trimmed);
+    setEditCategory(trimmed);
+    setCustomCategory("");
+
+    try {
+      await persistTodosAndCategories(todos, nextCategories);
+    } catch {
+      // Ignore persistence errors and keep the UI responsive.
+    }
   };
 
-  const deleteTodo = (id: string) => {
-    setTodos((current) => current.filter((todo) => todo.id !== id));
+  const toggleTodo = async (id: string) => {
+    const nextTodos = todos.map((todo) =>
+      todo.id === id
+        ? {
+            ...todo,
+            completed: !todo.completed,
+            updatedAt: new Date().toISOString(),
+          }
+        : todo,
+    );
+    setTodos(nextTodos);
+
+    try {
+      await persistTodosAndCategories(nextTodos, categories);
+    } catch {
+      // Ignore persistence errors and keep the UI responsive.
+    }
+  };
+
+  const deleteTodo = async (id: string) => {
+    const nextTodos = todos.filter((todo) => todo.id !== id);
+    setTodos(nextTodos);
+
     if (editingId === id) {
       setEditingId(null);
       setEditText("");
+    }
+
+    try {
+      await persistTodosAndCategories(nextTodos, categories);
+    } catch {
+      // Ignore persistence errors and keep the UI responsive.
     }
   };
 
@@ -141,26 +223,31 @@ export default function Home() {
     setEditCategory(todo.category);
   };
 
-  const saveEdit = (id: string) => {
+  const saveEdit = async (id: string) => {
     const trimmed = editText.trim();
     if (!trimmed) {
       return;
     }
 
-    setTodos((current) =>
-      current.map((todo) =>
-        todo.id === id
-          ? {
-              ...todo,
-              text: trimmed,
-              category: editCategory,
-              updatedAt: new Date().toISOString(),
-            }
-          : todo,
-      ),
+    const nextTodos = todos.map((todo) =>
+      todo.id === id
+        ? {
+            ...todo,
+            text: trimmed,
+            category: editCategory,
+            updatedAt: new Date().toISOString(),
+          }
+        : todo,
     );
+    setTodos(nextTodos);
     setEditingId(null);
     setEditText("");
+
+    try {
+      await persistTodosAndCategories(nextTodos, categories);
+    } catch {
+      // Ignore persistence errors and keep the UI responsive.
+    }
   };
 
   return (
@@ -203,7 +290,7 @@ export default function Home() {
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  addTodo();
+                  void addTodo();
                 }
               }}
               placeholder="할 일을 입력해 주세요"
@@ -221,7 +308,7 @@ export default function Home() {
               ))}
             </select>
             <button
-              onClick={addTodo}
+              onClick={() => void addTodo()}
               className="rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-3 font-semibold text-white shadow-md shadow-violet-200 transition hover:brightness-105"
             >
               추가
@@ -251,14 +338,14 @@ export default function Home() {
               onChange={(event) => setCustomCategory(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  addCustomCategory();
+                  void addCustomCategory();
                 }
               }}
               placeholder="새 카테고리 추가"
               className="flex-1 rounded-2xl border border-violet-200 bg-violet-50/60 px-4 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
             />
             <button
-              onClick={addCustomCategory}
+              onClick={() => void addCustomCategory()}
               className="rounded-2xl bg-violet-100 px-4 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-200"
             >
               카테고리 추가
@@ -296,7 +383,7 @@ export default function Home() {
                           ))}
                         </select>
                         <button
-                          onClick={() => saveEdit(todo.id)}
+                          onClick={() => void saveEdit(todo.id)}
                           className="rounded-xl bg-violet-500 px-3 py-2 text-sm font-semibold text-white"
                         >
                           저장
@@ -312,7 +399,7 @@ export default function Home() {
                   ) : (
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => toggleTodo(todo.id)}
+                        onClick={() => void toggleTodo(todo.id)}
                         aria-label={todo.completed ? "완료 취소" : "완료 체크"}
                         className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition ${
                           todo.completed
@@ -347,7 +434,7 @@ export default function Home() {
                           수정
                         </button>
                         <button
-                          onClick={() => deleteTodo(todo.id)}
+                          onClick={() => void deleteTodo(todo.id)}
                           className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-500 transition hover:bg-rose-200"
                         >
                           삭제

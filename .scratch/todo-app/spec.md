@@ -6,7 +6,7 @@ The app should feel friendly and approachable, with a gentle visual style that i
 
 ## Solution
 
-Build a single-page personal to-do application that keeps the full task management workflow in one place. Users can add new tasks with a category, view all tasks in a sorted list, complete or uncomplete tasks, edit task text and category, delete tasks, and see a live count of remaining tasks. The app will persist task data in browser localStorage so it works without a backend, while the storage logic remains in a dedicated module to make future database migration straightforward.
+Build a single-page personal to-do application that keeps the full task management workflow in one place. Users can add new tasks with a category, view all tasks in a sorted list, complete or uncomplete tasks, edit task text and category, delete tasks, and see a live count of remaining tasks. The app will persist task data in Turso using a database URL from the `TURSO_DATABASE_URL` environment variable, with a local file database as a default fallback for developer machines, while the storage logic remains in a dedicated module and API layer to keep future database migration straightforward.
 
 The UI will be designed in a calm, pastel purple theme with a friendly cat-inspired aesthetic to feel warm and approachable for a solo user.
 
@@ -47,9 +47,9 @@ The UI will be designed in a calm, pastel purple theme with a friendly cat-inspi
 
 - The app will be built as a single-page interface with one primary to-do board screen.
 - The task model will include the following core data points: a unique identifier, task text, category, completion state, created timestamp, and updated timestamp.
-- Task persistence will be handled in a dedicated storage module rather than inline in the UI component, preserving a clean boundary between presentation logic and persistence logic.
+- Task persistence will be handled in a dedicated storage module and API route rather than inline in the UI component, preserving a clean boundary between presentation logic and persistence logic.
 - The storage layer will expose functions for reading and writing tasks, reading and writing categories, and creating a new task object from a text value and category.
-- Browser localStorage will be used as the initial persistence layer, with a simple key-based data model for tasks and categories.
+- Turso will be used as the persistence backend, with `TURSO_DATABASE_URL` providing the database address for deployed environments, and `file:local.db` used as the local default when no environment variable is set.
 - The category system will include a default set of built-in categories, while allowing additional user-defined categories to be added at runtime.
 - The app will keep category names case-insensitive for uniqueness checks, so users do not create duplicate categories accidentally.
 - The app will sort the visible task list client-side using a small set of sort strategies rather than server-side logic, because the app operates in a single browser session with local data.
@@ -59,7 +59,7 @@ The UI will be designed in a calm, pastel purple theme with a friendly cat-inspi
 - The visual design will use a soft purple palette with pastel glass-like surfaces and rounded corners to create a friendly, gentle, cat-inspired design language.
 - The app will prioritize low-friction interactions: input, add, toggle, edit, and delete should all be accessible in the same screen without extra navigation.
 - The app will compute the remaining-task count in real time from the current task state, so the count always reflects the visible data.
-- Future database migration is supported by keeping the storage module as the single place to swap persistence backends without changing the rest of the app behavior.
+- Future database migration is supported by keeping the storage module and API layer as the single place to swap persistence backends without changing the rest of the app behavior.
 
 ## Testing Decisions
 
@@ -67,9 +67,9 @@ The UI will be designed in a calm, pastel purple theme with a friendly cat-inspi
 - The primary seam to test will be the app screen behavior as a user experiences it, rather than the internal implementation of the storage module.
 - Tests should cover the main UI flow for creating tasks, switching categories, marking tasks complete, and editing task content.
 - Tests should validate that the remaining task count updates based on completed items and that empty states render correctly when no tasks exist.
-- The persistence layer should be tested for reading and writing task data to localStorage, especially for the default data shape and for category persistence.
+- The persistence layer should be tested for reading and writing task data from the configured database, including ensuring `TURSO_DATABASE_URL` can override the local default connection.
 - Prior art for this app is a standard “task manager” interaction model: add, update, toggle, delete, and sort in a single list, with data persistence layered behind the UI.
-- The app does not require complex backend or integration testing at this stage, because the product is intentionally a local-first, browser-based to-do application.
+- The app does not require complex backend or integration testing at this stage, because the product is intentionally a local-first, browser-based to-do application that later moves to a remote database-backed persistence model.
 
 ## Out of Scope
 
@@ -83,4 +83,4 @@ The UI will be designed in a calm, pastel purple theme with a friendly cat-inspi
 
 ## Further Notes
 
-This feature is intentionally scoped to a personal, single-user to-do app. The design goal is clarity and ease of use rather than enterprise-scale complexity. The app can evolve later by replacing the localStorage storage module with a database-backed implementation without changing the rest of the user experience.
+This feature is intentionally scoped to a personal, single-user to-do app. The design goal is clarity and ease of use rather than enterprise-scale complexity. The app can evolve later by replacing the storage backend while keeping the same user experience and interface.

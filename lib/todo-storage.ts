@@ -1,3 +1,5 @@
+import { readCategories, readTodos, writeCategories, writeTodos } from "./db";
+
 export type Todo = {
   id: string;
   text: string;
@@ -35,87 +37,69 @@ function isTodo(value: unknown): value is Todo {
   );
 }
 
-export function getTodos(): Todo[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
+export async function getTodos(): Promise<Todo[]> {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isTodo);
+    const rows = await readTodos();
+    return rows.map((row) => ({
+      id: row.id,
+      text: row.text,
+      category: row.category,
+      completed: Boolean(row.completed),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
   } catch {
     return [];
   }
 }
 
-export function saveTodos(todos: Todo[]): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
+export async function saveTodos(todos: Todo[]): Promise<void> {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    await writeTodos(
+      todos.map((todo) => ({
+        id: todo.id,
+        text: todo.text,
+        category: todo.category,
+        completed: todo.completed,
+        createdAt: todo.createdAt,
+        updatedAt: todo.updatedAt,
+      })),
+    );
   } catch {
-    // Storage may be unavailable in some browsers or private mode.
+    // Ignore persistence failures in environments without the database.
   }
 }
 
-export function getCategories(): string[] {
-  if (typeof window === "undefined") {
-    return DEFAULT_CATEGORIES;
-  }
-
+export async function getCategories(): Promise<string[]> {
   try {
-    const raw = window.localStorage.getItem(CATEGORY_KEY);
-    if (!raw) {
-      return DEFAULT_CATEGORIES;
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
-      return DEFAULT_CATEGORIES;
-    }
-
-    return Array.from(new Set([...DEFAULT_CATEGORIES, ...parsed]));
+    const rows = await readCategories();
+    return rows.length > 0 ? Array.from(new Set([...DEFAULT_CATEGORIES, ...rows])) : DEFAULT_CATEGORIES;
   } catch {
     return DEFAULT_CATEGORIES;
   }
 }
 
-export function saveCategories(categories: string[]): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
+export async function saveCategories(categories: string[]): Promise<void> {
   try {
-    window.localStorage.setItem(CATEGORY_KEY, JSON.stringify(categories));
+    await writeCategories(categories);
   } catch {
-    // Ignore localStorage write failures.
+    // Ignore persistence failures in environments without the database.
   }
 }
 
-export function addCategory(name: string): string | null {
+export async function addCategory(name: string): Promise<string | null> {
   const trimmed = name.trim();
   if (!trimmed) {
     return null;
   }
 
-  const categories = getCategories();
-  if (categories.some((category) => category.toLowerCase() === trimmed.toLowerCase())) {
+  const categories = await getCategories();
+  if (categories.some((category: string) => category.toLowerCase() === trimmed.toLowerCase())) {
     return trimmed;
   }
 
   const next = [...categories, trimmed];
-  saveCategories(next);
+  await saveCategories(next);
   return trimmed;
 }
 
